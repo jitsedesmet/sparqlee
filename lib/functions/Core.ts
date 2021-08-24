@@ -1,31 +1,9 @@
-import type * as RDF from '@rdfjs/types';
+import type { ICompleteAsyncEvaluatorConfig } from '../evaluators/evaluatorHelpers/AsyncRecursiveEvaluator';
+import type { ICompleteSyncEvaluatorConfig } from '../evaluators/evaluatorHelpers/SyncRecursiveEvaluator';
 import type * as E from '../expressions';
-import type { Bindings } from '../Types';
 import type * as C from '../util/Consts';
 import * as Err from '../util/Errors';
-import type { IOpenWorldEnabler } from '../util/TypeHandling';
-import type { ImplementationFunction, OverLoadCache, OverloadTree } from './OverloadTree';
-
-export interface IFunctionContext {
-  openWorldEnabler: IOpenWorldEnabler;
-  now: Date;
-  baseIRI?: string;
-}
-export interface IApplyFunctionContext {
-  functionContext: IFunctionContext;
-  overloadCache?: OverLoadCache;
-}
-export interface IEvalSharedContext extends IApplyFunctionContext{
-  args: E.Expression[];
-  mapping: Bindings;
-}
-export interface IEvalContext<Term, BNode> extends IEvalSharedContext {
-  bnode: (input?: string) => BNode;
-  evaluate: (expr: E.Expression, mapping: Bindings) => Term;
-}
-
-export type EvalContextAsync = IEvalContext<Promise<E.TermExpression>, Promise<RDF.BlankNode>>;
-export type EvalContextSync = IEvalContext<E.TermExpression, RDF.BlankNode>;
+import type { OverloadTree } from './OverloadTree';
 
 // ----------------------------------------------------------------------------
 // Overloaded Functions
@@ -50,36 +28,28 @@ export abstract class BaseFunction<Operator> {
   }
 
   /**
-   * A function application works by monomorphing the function to a specific
-   * instance depending on the runtime types. We then just apply this function
-   * to the args.
-   */
-  public apply = (args: E.TermExpression[], applyConfig: IApplyFunctionContext):
-  E.TermExpression => {
-    const concreteFunction = this.monomorph(args, applyConfig) || this.handleInvalidTypes(args);
-    return concreteFunction(applyConfig.functionContext)(args);
-  };
-
-  protected abstract handleInvalidTypes(args: E.TermExpression[]): never;
-
-  /**
-   * We monomorph by checking the map of overloads for keys corresponding
+   * A function application works by checking the map of overloads for keys corresponding
    * to the runtime types. We start by checking for an implementation for the
    * most concrete types (integer, string, date, IRI), if we find none,
    * we consider their term types (literal, blank, IRI), and lastly we consider
    * all arguments as generic terms.
-   *
-   * Another option would be to populate the overloads with an implementation
-   * for every concrete type when the function is generic over termtypes or
-   * terms.
+   * We then just apply this function to the args and the context.
    */
-  private monomorph(args: E.TermExpression[], applyConfig: IApplyFunctionContext): ImplementationFunction | undefined {
-    return this.overloads.search(
-      args,
-      applyConfig.functionContext.openWorldEnabler,
-      applyConfig.overloadCache,
-    );
-  }
+  public applySync = (args: E.TermExpression[], context: ICompleteSyncEvaluatorConfig):
+  E.TermExpression => {
+    const concreteFunction = this.overloads.searchSync(args, context.superTypeProvider, context.overloadCache) ||
+      this.handleInvalidTypes(args);
+    return concreteFunction.sync(context)(args);
+  };
+
+  public applyAsync = async(args: E.TermExpression[], context: ICompleteAsyncEvaluatorConfig):
+  Promise<E.TermExpression> => {
+    const concreteFunction = await this.overloads.searchAsync(args, context.superTypeProvider, context.overloadCache) ||
+      this.handleInvalidTypes(args);
+    return await concreteFunction.async(context)(args);
+  };
+
+  protected abstract handleInvalidTypes(args: E.TermExpression[]): never;
 }
 
 // Regular Functions ----------------------------------------------------------

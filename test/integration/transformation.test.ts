@@ -2,8 +2,8 @@ import type * as RDF from '@rdfjs/types';
 import { DataFactory } from 'rdf-data-factory';
 
 import { isNonLexicalLiteral } from '../../lib/expressions';
-import type { ITermTransformer } from '../../lib/transformers/TermTransformer';
-import { TermTransformer } from '../../lib/transformers/TermTransformer';
+import type { ISyncTermTransformer } from '../../lib/transformers/SyncTermTransformer';
+import { SyncTermTransformer } from '../../lib/transformers/SyncTermTransformer';
 import { TypeURL as DT } from '../../lib/util/Consts';
 import { getDefaultFunctionContext } from '../util/utils';
 
@@ -26,9 +26,9 @@ function double(value: string): RDF.Literal {
 const DF = new DataFactory();
 
 describe('transformations', () => {
-  let termTransformer: ITermTransformer;
+  let termTransformer: ISyncTermTransformer;
   beforeEach(() => {
-    termTransformer = new TermTransformer(getDefaultFunctionContext().openWorldEnabler);
+    termTransformer = new SyncTermTransformer(getDefaultFunctionContext().superTypeProvider);
   });
 
   function simpleLiteralCreator(value: string, dataType?: string, language?: string): RDF.Literal {

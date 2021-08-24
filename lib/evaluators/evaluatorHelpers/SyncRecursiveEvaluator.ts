@@ -2,30 +2,32 @@ import type * as RDF from '@rdfjs/types';
 import type { Algebra as Alg } from 'sparqlalgebrajs';
 import * as E from '../../expressions';
 import type { SyncExtension } from '../../expressions';
-import type { EvalContextSync } from '../../functions';
-import type { ITermTransformer } from '../../transformers/TermTransformer';
-import { TermTransformer } from '../../transformers/TermTransformer';
+import type { ISyncTermTransformer } from '../../transformers/SyncTermTransformer';
+import { SyncTermTransformer } from '../../transformers/SyncTermTransformer';
 import type { Bindings, IExpressionEvaluator } from '../../Types';
 import * as Err from '../../util/Errors';
-import type { IOpenWorldEnabler } from '../../util/TypeHandling';
-import type { ICompleteSharedConfig } from './BaseExpressionEvaluator';
+import type { ISyncSuperTypeProvider } from '../../util/TypeHandling';
+import type { ICompleteSharedConfig, ISyncEvaluationContext } from '../SharedEvaluationTypes';
+import type { SyncExtensionFunctionCreator } from '../SyncEvaluator';
 import { BaseExpressionEvaluator } from './BaseExpressionEvaluator';
 
 export interface ICompleteSyncEvaluatorConfig extends ICompleteSharedConfig {
   exists?: (expression: Alg.ExistenceExpression, mapping: Bindings) => boolean;
   aggregate?: (expression: Alg.AggregateExpression) => RDF.Term;
   bnode?: (input?: string) => RDF.BlankNode;
+  extensionFunctionCreator?: SyncExtensionFunctionCreator;
+  superTypeProvider: ISyncSuperTypeProvider;
 }
 
 export class SyncRecursiveEvaluator extends BaseExpressionEvaluator
   implements IExpressionEvaluator<E.Expression, E.Term> {
-  protected openWorldType: IOpenWorldEnabler;
+  protected readonly termTransformer: ISyncTermTransformer;
   private readonly subEvaluators: Record<string, (expr: E.Expression, mapping: Bindings) => E.Term> = {
     // Shared
     [E.ExpressionType.Term]: this.term.bind(this),
-    [E.ExpressionType.Variable]: this.variable.bind(this),
 
     // Sync
+    [E.ExpressionType.Variable]: this.variable.bind(this),
     [E.ExpressionType.Operator]: this.evalOperator.bind(this),
     [E.ExpressionType.SpecialOperator]: this.evalSpecialOperator.bind(this),
     [E.ExpressionType.Named]: this.evalNamed.bind(this),
@@ -34,15 +36,17 @@ export class SyncRecursiveEvaluator extends BaseExpressionEvaluator
     [E.ExpressionType.SyncExtension]: this.evalSyncExtension.bind(this),
   };
 
-  public constructor(private readonly context: ICompleteSyncEvaluatorConfig, termTransformer?: ITermTransformer) {
-    super(termTransformer || new TermTransformer({
-      discoverer: context.superTypeDiscoverCallback,
-      cache: context.typeCache,
-    }));
-    this.openWorldType = {
-      discoverer: context.superTypeDiscoverCallback,
-      cache: context.typeCache,
-    };
+  public constructor(private readonly context: ICompleteSyncEvaluatorConfig, termTransformer?: ISyncTermTransformer) {
+    super();
+    this.termTransformer = termTransformer || new SyncTermTransformer(context.superTypeProvider);
+  }
+
+  protected variable(expr: E.Variable, mapping: Bindings): E.Term {
+    const term = mapping.get(expr.name);
+    if (!term) {
+      throw new Err.UnboundVariableError(expr.name, mapping);
+    }
+    return this.termTransformer.transformRDFTermUnsafe(term);
   }
 
   public evaluate(expr: E.Expression, mapping: Bindings): E.Term {
@@ -55,29 +59,23 @@ export class SyncRecursiveEvaluator extends BaseExpressionEvaluator
 
   private evalOperator(expr: E.Operator, mapping: Bindings): E.Term {
     const args = expr.args.map(arg => this.evaluate(arg, mapping));
-    return expr.apply(args);
+    return expr.applySync(this.context)(args);
   }
 
   private evalSpecialOperator(expr: E.SpecialOperator, mapping: Bindings): E.Term {
     const evaluate = this.evaluate.bind(this);
-    const context: EvalContextSync = {
+    const context: ISyncEvaluationContext = {
       args: expr.args,
       mapping,
       evaluate,
-      functionContext: {
-        now: this.context.now,
-        baseIRI: this.context.baseIRI,
-        openWorldEnabler: this.openWorldType,
-      },
-      bnode: this.context.bnode,
-      overloadCache: this.context.overloadCache,
+      ...this.context,
     };
     return expr.applySync(context);
   }
 
   private evalNamed(expr: E.Named, mapping: Bindings): E.Term {
     const args = expr.args.map(arg => this.evaluate(arg, mapping));
-    return expr.apply(args);
+    return expr.applySync(this.context)(args);
   }
 
   private evalSyncExtension(expr: SyncExtension, mapping: Bindings): E.Term {

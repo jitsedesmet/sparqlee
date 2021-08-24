@@ -1,12 +1,11 @@
-import * as uuid from 'uuid';
-
+import type { IAsyncEvaluationContext, ISyncEvaluationContext } from '../evaluators/SharedEvaluationTypes';
 import * as E from '../expressions';
 import type { Bindings } from '../Types';
 import * as C from '../util/Consts';
 import * as Err from '../util/Errors';
 
 import { bool, declare, langString, string } from './Helpers';
-import type { EvalContextAsync, EvalContextSync, OverloadTree } from '.';
+import type { OverloadTree } from '.';
 import { regularFunctions, specialFunctions } from '.';
 
 type Term = E.TermExpression;
@@ -24,10 +23,10 @@ type PTerm = Promise<E.TermExpression>;
  */
 const bound: ISpecialDefinition = {
   arity: 1,
-  async applyAsync({ args, mapping }: EvalContextAsync): PTerm {
+  async applyAsync({ args, mapping }: IAsyncEvaluationContext): PTerm {
     return bound_({ args, mapping });
   },
-  applySync({ args, mapping }: EvalContextSync): Term {
+  applySync({ args, mapping }: ISyncEvaluationContext): Term {
     return bound_({ args, mapping });
   },
 };
@@ -49,14 +48,14 @@ function bound_({ args, mapping }: { args: E.Expression[]; mapping: Bindings }):
  */
 const ifSPARQL: ISpecialDefinition = {
   arity: 3,
-  async applyAsync({ args, mapping, evaluate }: EvalContextAsync): PTerm {
+  async applyAsync({ args, mapping, evaluate }: IAsyncEvaluationContext): PTerm {
     const valFirst = await evaluate(args[0], mapping);
     const ebv = valFirst.coerceEBV();
     return ebv ?
       evaluate(args[1], mapping) :
       evaluate(args[2], mapping);
   },
-  applySync({ args, mapping, evaluate }: EvalContextSync): Term {
+  applySync({ args, mapping, evaluate }: ISyncEvaluationContext): Term {
     const valFirst = evaluate(args[0], mapping);
     const ebv = valFirst.coerceEBV();
     return ebv ?
@@ -73,7 +72,7 @@ const ifSPARQL: ISpecialDefinition = {
  */
 const coalesce: ISpecialDefinition = {
   arity: Number.POSITIVE_INFINITY,
-  async applyAsync({ args, mapping, evaluate }: EvalContextAsync): PTerm {
+  async applyAsync({ args, mapping, evaluate }: IAsyncEvaluationContext): PTerm {
     const errors: Error[] = [];
     for (const expr of args) {
       try {
@@ -84,7 +83,7 @@ const coalesce: ISpecialDefinition = {
     }
     throw new Err.CoalesceError(errors);
   },
-  applySync({ args, mapping, evaluate }: EvalContextSync): Term {
+  applySync({ args, mapping, evaluate }: ISyncEvaluationContext): Term {
     const errors: Error[] = [];
     for (const expr of args) {
       try {
@@ -105,7 +104,7 @@ const coalesce: ISpecialDefinition = {
  */
 const logicalOr: ISpecialDefinition = {
   arity: 2,
-  async applyAsync({ args, mapping, evaluate }: EvalContextAsync): PTerm {
+  async applyAsync({ args, mapping, evaluate }: IAsyncEvaluationContext): PTerm {
     const [ leftExpr, rightExpr ] = args;
     try {
       const leftTerm = await evaluate(leftExpr, mapping);
@@ -125,7 +124,7 @@ const logicalOr: ISpecialDefinition = {
       return bool(true);
     }
   },
-  applySync({ args, mapping, evaluate }: EvalContextSync): Term {
+  applySync({ args, mapping, evaluate }: ISyncEvaluationContext): Term {
     const [ leftExpr, rightExpr ] = args;
     try {
       const leftTerm = evaluate(leftExpr, mapping);
@@ -155,7 +154,7 @@ const logicalOr: ISpecialDefinition = {
  */
 const logicalAnd: ISpecialDefinition = {
   arity: 2,
-  async applyAsync({ args, mapping, evaluate }: EvalContextAsync): PTerm {
+  async applyAsync({ args, mapping, evaluate }: IAsyncEvaluationContext): PTerm {
     const [ leftExpr, rightExpr ] = args;
     try {
       const leftTerm = await evaluate(leftExpr, mapping);
@@ -175,7 +174,7 @@ const logicalAnd: ISpecialDefinition = {
       return bool(false);
     }
   },
-  applySync({ args, mapping, evaluate }: EvalContextSync): Term {
+  applySync({ args, mapping, evaluate }: ISyncEvaluationContext): Term {
     const [ leftExpr, rightExpr ] = args;
     try {
       const leftTerm = evaluate(leftExpr, mapping);
@@ -205,12 +204,12 @@ const logicalAnd: ISpecialDefinition = {
  */
 const sameTerm: ISpecialDefinition = {
   arity: 2,
-  async applyAsync({ args, mapping, evaluate }: EvalContextAsync): PTerm {
+  async applyAsync({ args, mapping, evaluate }: IAsyncEvaluationContext): PTerm {
     const [ leftExpr, rightExpr ] = args.map(arg => evaluate(arg, mapping));
     const [ left, right ] = await Promise.all([ leftExpr, rightExpr ]);
     return bool(left.toRDF().equals(right.toRDF()));
   },
-  applySync({ args, mapping, evaluate }: EvalContextSync): Term {
+  applySync({ args, mapping, evaluate }: ISyncEvaluationContext): Term {
     const [ left, right ] = args.map(arg => evaluate(arg, mapping));
     return bool(left.toRDF().equals(right.toRDF()));
   },
@@ -227,13 +226,13 @@ const inSPARQL: ISpecialDefinition = {
   checkArity(args: E.Expression[]) {
     return args.length > 0;
   },
-  async applyAsync(context: EvalContextAsync): PTerm {
+  async applyAsync(context: IAsyncEvaluationContext): PTerm {
     const { args, mapping, evaluate } = context;
     const [ leftExpr, ...remaining ] = args;
     const left = await evaluate(leftExpr, mapping);
     return inRecursiveAsync(left, { ...context, args: remaining }, []);
   },
-  applySync(context: EvalContextSync): Term {
+  applySync(context: ISyncEvaluationContext): Term {
     const { args, mapping, evaluate } = context;
     const [ leftExpr, ...remaining ] = args;
     const left = evaluate(leftExpr, mapping);
@@ -243,10 +242,10 @@ const inSPARQL: ISpecialDefinition = {
 
 async function inRecursiveAsync(
   needle: Term,
-  context: EvalContextAsync,
+  context: IAsyncEvaluationContext,
   results: (Error | false)[],
 ): PTerm {
-  const { args, mapping, evaluate, functionContext, overloadCache } = context;
+  const { args, mapping, evaluate, overloadCache } = context;
   if (args.length === 0) {
     const noErrors = results.every(val => !val);
     return noErrors ? bool(false) : Promise.reject(new Err.InError(results));
@@ -255,7 +254,7 @@ async function inRecursiveAsync(
   try {
     const next = await evaluate(args.shift(), mapping);
     const isEqual = regularFunctions[C.RegularOperator.EQUAL];
-    if ((<E.BooleanLiteral> isEqual.apply([ needle, next ], { functionContext, overloadCache })).typedValue) {
+    if ((<E.BooleanLiteral> await isEqual.applyAsync([ needle, next ], context)).typedValue) {
       return bool(true);
     }
     return inRecursiveAsync(needle, context, [ ...results, false ]);
@@ -266,10 +265,10 @@ async function inRecursiveAsync(
 
 function inRecursiveSync(
   needle: Term,
-  context: EvalContextSync,
+  context: ISyncEvaluationContext,
   results: (Error | false)[],
 ): Term {
-  const { args, mapping, evaluate, functionContext, overloadCache } = context;
+  const { args, mapping, evaluate, overloadCache } = context;
   if (args.length === 0) {
     const noErrors = results.every(val => !val);
     if (noErrors) {
@@ -281,7 +280,7 @@ function inRecursiveSync(
   try {
     const next = evaluate(args.shift(), mapping);
     const isEqual = regularFunctions[C.RegularOperator.EQUAL];
-    if ((<E.BooleanLiteral> isEqual.apply([ needle, next ], { functionContext, overloadCache })).typedValue) {
+    if ((<E.BooleanLiteral> isEqual.applySync([ needle, next ], context)).typedValue) {
       return bool(true);
     }
     return inRecursiveSync(needle, context, [ ...results, false ]);
@@ -301,12 +300,12 @@ const notInSPARQL: ISpecialDefinition = {
   checkArity(args: E.Expression[]) {
     return args.length > 0;
   },
-  async applyAsync(context: EvalContextAsync): PTerm {
+  async applyAsync(context: IAsyncEvaluationContext): PTerm {
     const _in = specialFunctions[C.SpecialOperator.IN];
     const isIn = await _in.applyAsync(context);
     return bool(!(<E.BooleanLiteral> isIn).typedValue);
   },
-  applySync(context: EvalContextSync): Term {
+  applySync(context: ISyncEvaluationContext): Term {
     const _in = specialFunctions[C.SpecialOperator.IN];
     const isIn = _in.applySync(context);
     return bool(!(<E.BooleanLiteral> isIn).typedValue);
@@ -329,16 +328,16 @@ const concatTree: OverloadTree = declare(C.SpecialOperator.CONCAT).onStringly1((
  */
 const concat: ISpecialDefinition = {
   arity: Number.POSITIVE_INFINITY,
-  async applyAsync(context: EvalContextAsync): PTerm {
-    const { args, mapping, evaluate, functionContext, overloadCache } = context;
+  async applyAsync(context: IAsyncEvaluationContext): PTerm {
+    const { args, mapping, evaluate, overloadCache, superTypeProvider } = context;
     const pLits: Promise<E.Literal<string>>[] = args
       .map(async expr => evaluate(expr, mapping))
       .map(async pTerm => {
-        const operation = concatTree.search([ await pTerm ], functionContext.openWorldEnabler, overloadCache);
+        const operation = await concatTree.searchAsync([ await pTerm ], superTypeProvider, overloadCache);
         if (!operation) {
           throw new Err.InvalidArgumentTypes(args, C.SpecialOperator.CONCAT);
         }
-        return <E.Literal<string>> operation(functionContext)([ await pTerm ]);
+        return <E.Literal<string>> await operation.async(context)([ await pTerm ]);
       });
     const lits = await Promise.all(pLits);
     const strings = lits.map(lit => lit.typedValue);
@@ -347,16 +346,16 @@ const concat: ISpecialDefinition = {
     return lang ? langString(joined, lang) : string(joined);
   },
 
-  applySync(context: EvalContextSync): Term {
-    const { args, mapping, evaluate, functionContext, overloadCache } = context;
+  applySync(context: ISyncEvaluationContext): Term {
+    const { args, mapping, evaluate, overloadCache, superTypeProvider } = context;
     const lits = args
       .map(expr => evaluate(expr, mapping))
       .map(pTerm => {
-        const operation = concatTree.search([ pTerm ], functionContext.openWorldEnabler, overloadCache);
+        const operation = concatTree.searchSync([ pTerm ], superTypeProvider, overloadCache);
         if (!operation) {
           throw new Err.InvalidArgumentTypes(args, C.SpecialOperator.CONCAT);
         }
-        return <E.Literal<string>> operation(functionContext)([ pTerm ]);
+        return <E.Literal<string>> operation.sync(context)([ pTerm ]);
       });
     const strings = lits.map(lit => lit.typedValue);
     const joined = strings.join('');
@@ -367,78 +366,6 @@ const concat: ISpecialDefinition = {
 
 function langAllEqual(lits: E.Literal<string>[]): boolean {
   return lits.length > 0 && lits.every(lit => lit.language === lits[0].language);
-}
-
-// ----------------------------------------------------------------------------
-// Context dependant functions
-// ----------------------------------------------------------------------------
-
-// BNODE ---------------------------------------------------------------------
-
-/**
- * This OverloadTree with the constant function will handle both type promotion and subtype-substitution
- */
-const bnodeTree = declare(C.SpecialOperator.BNODE).onString1(() => arg => arg).collect();
-
-/**
- * https://www.w3.org/TR/sparql11-query/#func-bnode
- * id has to be distinct over all id's in dataset
- */
-const BNODE: ISpecialDefinition = {
-  arity: Number.POSITIVE_INFINITY,
-  checkArity(args: E.Expression[]) {
-    return args.length === 0 || args.length === 1;
-  },
-  async applyAsync(context: EvalContextAsync): PTerm {
-    const { args, mapping, evaluate, functionContext, overloadCache } = context;
-    const input = args.length === 1 ?
-      await evaluate(args[0], mapping) :
-      undefined;
-
-    let strInput: string | undefined;
-    if (input) {
-      const operation = bnodeTree.search([ input ], functionContext.openWorldEnabler, overloadCache);
-      if (!operation) {
-        throw new Err.InvalidArgumentTypes(args, C.SpecialOperator.BNODE);
-      }
-      // eslint-disable-next-line prefer-const
-      strInput = operation(functionContext)([ input ]).str();
-    }
-
-    if (context.bnode) {
-      const bnode = await context.bnode(strInput);
-      return new E.BlankNode(bnode);
-    }
-
-    return BNODE_(strInput);
-  },
-  applySync(context: EvalContextSync): Term {
-    const { args, mapping, evaluate, functionContext, overloadCache } = context;
-    const input = args.length === 1 ?
-      evaluate(args[0], mapping) :
-      undefined;
-
-    let strInput: string | undefined;
-    if (input) {
-      const operation = bnodeTree.search([ input ], functionContext.openWorldEnabler, overloadCache);
-      if (!operation) {
-        throw new Err.InvalidArgumentTypes(args, C.SpecialOperator.BNODE);
-      }
-      // eslint-disable-next-line prefer-const
-      strInput = operation(functionContext)([ input ]).str();
-    }
-
-    if (context.bnode) {
-      const bnode = context.bnode(strInput);
-      return new E.BlankNode(bnode);
-    }
-
-    return BNODE_(strInput);
-  },
-};
-
-function BNODE_(input?: string): E.BlankNode {
-  return new E.BlankNode(input || uuid.v4());
 }
 
 // ----------------------------------------------------------------------------
@@ -469,8 +396,5 @@ export const specialDefinitions: Record<C.SpecialOperator, ISpecialDefinition> =
 
   // Annoying functions
   concat,
-
-  // Context dependent functions
-  BNODE,
 };
 

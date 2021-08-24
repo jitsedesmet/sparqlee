@@ -108,7 +108,7 @@ export enum RegularOperator {
   DATATYPE = 'datatype',
   IRI = 'iri',
   URI = 'uri',
-  // BNODE = 'BNODE', (see special operators)
+  BNODE = 'BNODE',
   STRDT = 'strdt',
   STRLANG = 'strlang',
   UUID = 'uuid',
@@ -180,9 +180,6 @@ export enum SpecialOperator {
 
   // Annoying functions - Has variable arity
   CONCAT = 'concat',
-
-  // Context dependant functions
-  BNODE = 'BNODE',
 }
 
 export const RegularOperators: Set<string> = new Set(Object.values(RegularOperator));

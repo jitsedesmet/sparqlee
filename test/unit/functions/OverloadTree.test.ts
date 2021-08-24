@@ -1,7 +1,8 @@
 import * as LRUCache from 'lru-cache';
+import type { ICompleteSharedConfig } from '../../../lib/evaluators/SharedEvaluationTypes';
 import { isLiteralTermExpression, Literal, StringLiteral } from '../../../lib/expressions';
-import type { IFunctionContext } from '../../../lib/functions';
 import { OverloadTree } from '../../../lib/functions';
+import { Builder } from '../../../lib/functions/Helpers';
 import type { OverLoadCache } from '../../../lib/functions/OverloadTree';
 import type { KnownLiteralTypes } from '../../../lib/util/Consts';
 import { TypeURL } from '../../../lib/util/Consts';
@@ -9,7 +10,7 @@ import { getDefaultFunctionContext } from '../../util/utils';
 
 describe('OverloadTree', () => {
   let emptyTree: OverloadTree;
-  let functionContext: IFunctionContext;
+  let functionContext: ICompleteSharedConfig;
   beforeEach(() => {
     emptyTree = new OverloadTree('Non cacheable');
     functionContext = getDefaultFunctionContext();
@@ -17,10 +18,10 @@ describe('OverloadTree', () => {
 
   function typePromotionTest<T>(tree: OverloadTree, promoteFrom: KnownLiteralTypes, promoteTo: KnownLiteralTypes,
     value: T, valueToEqual?: T) {
-    tree.addOverload([ promoteTo ], () => ([ arg ]) => arg);
+    tree.addOverload([ promoteTo ], Builder.implementAll(() => ([ arg ]) => arg));
     const arg = new Literal<T>(value, promoteFrom);
     const res = isLiteralTermExpression(tree
-      .search([ arg ], functionContext.openWorldEnabler)(functionContext)([ arg ]));
+      .search([ arg ], functionContext.superTypeProvider).sync(functionContext)([ arg ]));
     expect(res).toBeTruthy();
     expect(res.dataType).toEqual(promoteTo);
     expect(res.typedValue).toEqual(valueToEqual || value);
@@ -28,10 +29,10 @@ describe('OverloadTree', () => {
 
   function subtypeSubstitutionTest<T>(tree: OverloadTree, argumentType: KnownLiteralTypes,
     expectedType: KnownLiteralTypes, value: T) {
-    tree.addOverload([ expectedType ], () => ([ arg ]) => arg);
+    tree.addOverload([ expectedType ], Builder.implementAll(() => ([ arg ]) => arg));
     const arg = new Literal<T>(value, argumentType);
     const res = isLiteralTermExpression(tree
-      .search([ arg ], functionContext.openWorldEnabler)(functionContext)([ arg ]));
+      .search([ arg ], functionContext.superTypeProvider).sync(functionContext)([ arg ]));
     expect(res).toBeTruthy();
     expect(res.dataType).toEqual(argumentType);
     expect(res.typedValue).toEqual(value);
@@ -66,23 +67,23 @@ describe('OverloadTree', () => {
   });
 
   it('can handle both substitution and promotion at once', () => {
-    emptyTree.addOverload([ TypeURL.XSD_DOUBLE ], () => ([ arg ]) => arg);
+    emptyTree.addOverload([ TypeURL.XSD_DOUBLE ], Builder.implementAll(() => ([ arg ]) => arg));
 
     const arg = new Literal<number>(0, TypeURL.XSD_SHORT);
     const res = isLiteralTermExpression(emptyTree
-      .search([ arg ], functionContext.openWorldEnabler)(functionContext)([ arg ]));
+      .search([ arg ], functionContext.superTypeProvider).sync(functionContext)([ arg ]));
     expect(res).toBeTruthy();
     expect(res.dataType).toEqual(TypeURL.XSD_DOUBLE);
     expect(res.typedValue).toEqual(0);
   });
 
   it('can handle unknown literal dataType', () => {
-    emptyTree.addOverload([ 'term' ], () => ([ arg ]) => arg);
+    emptyTree.addOverload([ 'term' ], Builder.implementAll(() => ([ arg ]) => arg));
     const dataType = 'www.example.com#weird-string';
     const litValue = 'weird';
     const arg = new Literal<string>(litValue, dataType);
     const res = isLiteralTermExpression(emptyTree
-      .search([ arg ], functionContext.openWorldEnabler)(functionContext)([ arg ]));
+      .search([ arg ], functionContext.superTypeProvider).sync(functionContext)([ arg ]));
     expect(res).toBeTruthy();
     expect(res.dataType).toEqual(dataType);
     expect(res.typedValue).toEqual(litValue);
@@ -92,9 +93,9 @@ describe('OverloadTree', () => {
     const cache: OverLoadCache = new LRUCache();
     const spy = jest.spyOn(cache, 'get');
     const args = [ new StringLiteral('some str') ];
-    emptyTree.search(args, functionContext.openWorldEnabler, cache);
+    emptyTree.search(args, functionContext.superTypeProvider, cache);
     expect(spy).toBeCalledTimes(0);
-    emptyTree.search(args, functionContext.openWorldEnabler, cache);
+    emptyTree.search(args, functionContext.superTypeProvider, cache);
     expect(spy).toBeCalledTimes(1);
   });
 });

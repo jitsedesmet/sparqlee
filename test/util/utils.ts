@@ -1,5 +1,5 @@
 import * as LRUCache from 'lru-cache';
-import type { IFunctionContext } from '../../lib/functions';
+import type { ICompleteSharedConfig } from '../../lib/evaluators/SharedEvaluationTypes';
 import type { AliasMap } from './Aliases';
 import type { GeneralEvaluationConfig } from './generalEvaluation';
 import type { Notation } from './TestTable';
@@ -56,10 +56,10 @@ export function runTestTable(arg: TestTableConfig): void {
   testTable.test();
 }
 
-export function getDefaultFunctionContext(): IFunctionContext {
+export function getDefaultFunctionContext(): ICompleteSharedConfig {
   return {
     now: new Date(),
-    openWorldEnabler: {
+    superTypeProvider: {
       cache: new LRUCache(),
       discoverer: () => 'term',
     },

@@ -1,17 +1,17 @@
 import type * as RDF from '@rdfjs/types';
 import * as LRUCache from 'lru-cache';
 import type * as T from '../expressions/Term';
-import { TermTransformer } from '../transformers/TermTransformer';
-import type { IOpenWorldEnabler, SuperTypeDiscoverCallback, TypeCache } from './TypeHandling';
+import { SyncTermTransformer } from '../transformers/SyncTermTransformer';
+import type { ISyncSuperTypeProvider, SyncSuperTypeCallback, TypeCache } from './TypeHandling';
 
 // Determine the relative numerical order of the two given terms.
 export function orderTypes(litA: RDF.Term | undefined, litB: RDF.Term | undefined, isAscending: boolean,
-  typeDiscoveryCallback?: SuperTypeDiscoverCallback, typeCache?: TypeCache): -1 | 0 | 1 {
-  const openWorldType: IOpenWorldEnabler = {
+                           typeDiscoveryCallback?: SyncSuperTypeCallback, typeCache?: TypeCache): -1 | 0 | 1 {
+  const openWorldType: ISyncSuperTypeProvider = {
     discoverer: typeDiscoveryCallback || (() => 'term'),
     cache: typeCache || new LRUCache(),
   };
-  const termTransformer = new TermTransformer(openWorldType);
+  const termTransformer = new SyncTermTransformer(openWorldType);
   if (litA && litA.termType === 'Literal' && litB && litB.termType === 'Literal') {
     const myLitA = termTransformer.transformLiteral(litA);
     const myLitB = termTransformer.transformLiteral(litB);

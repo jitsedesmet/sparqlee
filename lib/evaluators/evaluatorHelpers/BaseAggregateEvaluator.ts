@@ -1,22 +1,22 @@
 import type * as RDF from '@rdfjs/types';
 import type { Algebra } from 'sparqlalgebrajs';
-import type { IAggregatorClass } from '../../aggregators';
-import { aggregators } from '../../aggregators';
-import type { BaseAggregator } from '../../aggregators/BaseAggregator';
-import type { IApplyFunctionContext } from '../../functions';
+import type { ISyncAggregatorClass } from '../../aggregators';
+import { syncAggregators } from '../../aggregators';
+import type { BaseSyncAggregator } from '../../aggregators/BaseSyncAggregator';
 import type { Bindings } from '../../Types';
 import type { SetFunction } from '../../util/Consts';
 import * as Err from '../../util/Errors';
+import type { ICompleteSharedConfig } from '../SharedEvaluationTypes';
 
 export abstract class BaseAggregateEvaluator {
   protected expression: Algebra.AggregateExpression;
-  protected aggregator: BaseAggregator<any>;
+  protected aggregator: BaseSyncAggregator<any>;
   protected throwError = false;
   protected state: any;
 
-  protected constructor(expr: Algebra.AggregateExpression, applyConfig: IApplyFunctionContext, throwError?: boolean) {
+  protected constructor(expr: Algebra.AggregateExpression, applyConfig: ICompleteSharedConfig, throwError?: boolean) {
     this.expression = expr;
-    this.aggregator = new aggregators[<SetFunction> expr.aggregator](expr, applyConfig);
+    this.aggregator = new syncAggregators[<SetFunction> expr.aggregator](expr, applyConfig);
     this.throwError = throwError;
   }
 
@@ -29,7 +29,7 @@ export abstract class BaseAggregateEvaluator {
    * @param throwError whether this function should respect the spec and throw an error if no empty value is defined
    */
   public static emptyValue(expr: Algebra.AggregateExpression, throwError = false): RDF.Term {
-    const val = aggregators[<SetFunction> expr.aggregator].emptyValue();
+    const val = syncAggregators[<SetFunction> expr.aggregator].emptyValue();
     if (val === undefined && throwError) {
       throw new Err.EmptyAggregateError();
     }
@@ -37,7 +37,7 @@ export abstract class BaseAggregateEvaluator {
   }
 
   public result(): RDF.Term | undefined {
-    return (<IAggregatorClass> this.aggregator.constructor).emptyValue();
+    return (<ISyncAggregatorClass> this.aggregator.constructor).emptyValue();
   }
 
   /**

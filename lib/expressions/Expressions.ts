@@ -1,6 +1,8 @@
 import type * as RDF from '@rdfjs/types';
 import type { Algebra } from 'sparqlalgebrajs';
-import type { EvalContextAsync, EvalContextSync } from '../functions';
+import type { ICompleteAsyncEvaluatorConfig } from '../evaluators/evaluatorHelpers/AsyncRecursiveEvaluator';
+import type { ICompleteSyncEvaluatorConfig } from '../evaluators/evaluatorHelpers/SyncRecursiveEvaluator';
+import type { IAsyncEvaluationContext, ISyncEvaluationContext } from '../evaluators/SharedEvaluationTypes';
 
 export enum ExpressionType {
   Aggregate = 'aggregate',
@@ -43,28 +45,30 @@ export type ExistenceExpression = IExpressionProps & {
 export type NamedExpression = IExpressionProps & {
   expressionType: ExpressionType.Named;
   name: RDF.NamedNode;
-  apply: SimpleApplication;
+  applySync: (context: ICompleteSyncEvaluatorConfig) => SimpleSyncApplication;
+  applyAsync: (context: ICompleteAsyncEvaluatorConfig) => SimpleAsyncApplication;
   args: Expression[];
 };
 
 export type AsyncExtensionExpression = IExpressionProps & {
   expressionType: ExpressionType.AsyncExtension;
   name: RDF.NamedNode;
-  apply: AsyncExtensionApplication;
+  apply: SimpleAsyncApplication;
   args: Expression[];
 };
 
 export type SyncExtensionExpression = IExpressionProps & {
   expressionType: ExpressionType.SyncExtension;
   name: RDF.NamedNode;
-  apply: SimpleApplication;
+  apply: SimpleSyncApplication;
   args: Expression[];
 };
 
 export type OperatorExpression = IExpressionProps & {
   expressionType: ExpressionType.Operator;
   args: Expression[];
-  apply: SimpleApplication;
+  applySync: (context: ICompleteSyncEvaluatorConfig) => SimpleSyncApplication;
+  applyAsync: (context: ICompleteAsyncEvaluatorConfig) => SimpleAsyncApplication;
 };
 
 export type SpecialOperatorExpression = IExpressionProps & {
@@ -90,9 +94,9 @@ export type VariableExpression = IExpressionProps & {
 };
 
 // Export type Application = SimpleApplication | SpecialApplication;
-export type SimpleApplication = (args: TermExpression[]) => TermExpression;
-export type AsyncExtensionApplication = (args: TermExpression[]) => Promise<TermExpression>;
+export type SimpleSyncApplication = (args: TermExpression[]) => TermExpression;
+export type SimpleAsyncApplication = (args: TermExpression[]) => Promise<TermExpression>;
 
-export type SpecialApplicationAsync = (context: EvalContextAsync) => Promise<TermExpression>;
+export type SpecialApplicationAsync = (context: IAsyncEvaluationContext) => Promise<TermExpression>;
 
-export type SpecialApplicationSync = (context: EvalContextSync) => TermExpression;
+export type SpecialApplicationSync = (context: ISyncEvaluationContext) => TermExpression;

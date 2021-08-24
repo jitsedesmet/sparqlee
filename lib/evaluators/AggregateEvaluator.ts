@@ -1,5 +1,4 @@
 import type { Algebra } from 'sparqlalgebrajs';
-import type { IApplyFunctionContext } from '../functions';
 import type { Bindings } from '../Types';
 import { BaseAggregateEvaluator } from './evaluatorHelpers/BaseAggregateEvaluator';
 import type { ISyncEvaluatorConfig } from './SyncEvaluator';
@@ -9,24 +8,8 @@ import { SyncEvaluator } from './SyncEvaluator';
 export class AggregateEvaluator extends BaseAggregateEvaluator {
   private readonly evaluator: SyncEvaluator;
 
-  private static getApplyFunctionConfig(config: ISyncEvaluatorConfig): IApplyFunctionContext {
-    const { now, baseIRI, overloadCache, typeCache, superTypeDiscoverCallback } =
-      SyncEvaluator.setDefaultsFromConfig(config);
-    return {
-      functionContext: {
-        now,
-        baseIRI,
-        openWorldEnabler: {
-          cache: typeCache,
-          discoverer: superTypeDiscoverCallback,
-        },
-      },
-      overloadCache,
-    };
-  }
-
   public constructor(expr: Algebra.AggregateExpression, config?: ISyncEvaluatorConfig, throwError?: boolean) {
-    super(expr, AggregateEvaluator.getApplyFunctionConfig(config || {}), throwError);
+    super(expr, SyncEvaluator.setDefaultsFromConfig(config || {}), throwError);
     this.evaluator = new SyncEvaluator(expr.expression, config);
   }
 

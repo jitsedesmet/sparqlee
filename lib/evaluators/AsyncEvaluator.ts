@@ -2,11 +2,13 @@ import type * as RDF from '@rdfjs/types';
 import * as LRUCache from 'lru-cache';
 import type { Algebra as Alg } from 'sparqlalgebrajs';
 import type * as E from '../expressions/Expressions';
-import { AlgebraTransformer } from '../transformers/AlgebraTransformer';
+import { AsyncAlgebraTransformer } from '../transformers/AsyncAlgebraTransformer';
+import { SyncAlgebraTransformer } from '../transformers/SyncAlgebraTransformer';
 import type { Bindings, IExpressionEvaluator } from '../Types';
+import type { AsyncSuperTypeCallback } from '../util/TypeHandling';
 import type { ICompleteAsyncEvaluatorConfig } from './evaluatorHelpers/AsyncRecursiveEvaluator';
 import { AsyncRecursiveEvaluator } from './evaluatorHelpers/AsyncRecursiveEvaluator';
-import type { ISharedConfig } from './evaluatorHelpers/BaseExpressionEvaluator';
+import type { ISharedConfig } from './SharedEvaluationTypes';
 
 export type AsyncExtensionFunction = (args: RDF.Term[]) => Promise<RDF.Term>;
 export type AsyncExtensionFunctionCreator = (functionNamedNode: RDF.NamedNode) => AsyncExtensionFunction | undefined;
@@ -16,6 +18,7 @@ export interface IAsyncEvaluatorConfig extends ISharedConfig {
   aggregate?: (expression: Alg.AggregateExpression) => Promise<RDF.Term>;
   bnode?: (input?: string) => Promise<RDF.BlankNode>;
   extensionFunctionCreator?: AsyncExtensionFunctionCreator;
+  superTypeCallback?: AsyncSuperTypeCallback;
 }
 
 export class AsyncEvaluator {
@@ -27,26 +30,47 @@ export class AsyncEvaluator {
       now: config.now || new Date(Date.now()),
       baseIRI: config.baseIRI || undefined,
       overloadCache: config.overloadCache,
-      typeCache: config.typeCache || new LRUCache(),
-      superTypeDiscoverCallback: config.superTypeDiscoverCallback || (() => 'term'),
+      superTypeProvider: {
+        cache: config.typeCache || new LRUCache(),
+        discoverer: config.superTypeCallback || (async() => 'term'),
+      },
+      // eslint-disable-next-line unicorn/no-useless-undefined
+      extensionFunctionCreator: config.extensionFunctionCreator || (() => undefined),
       exists: config.exists,
       aggregate: config.aggregate,
       bnode: config.bnode,
     };
   }
 
-  public constructor(public algExpr: Alg.Expression, config: IAsyncEvaluatorConfig = {}) {
-    // eslint-disable-next-line unicorn/no-useless-undefined
-    const creator = config.extensionFunctionCreator || (() => undefined);
-    const baseConfig = AsyncEvaluator.setDefaultsFromConfig(config);
+  public constructor(public algExpr: Alg.Expression, config: IAsyncEvaluatorConfig = {}, createOptions?: {
+    expr: E.Expression; transformer: AsyncAlgebraTransformer; context: ICompleteAsyncEvaluatorConfig;
+  }) {
+    const context = createOptions ? createOptions.context : AsyncEvaluator.setDefaultsFromConfig(config);
 
-    this.expr = new AlgebraTransformer({
-      type: 'async',
-      creator,
-      ...baseConfig,
-    }).transformAlgebra(algExpr);
+    if (createOptions) {
+      this.expr = createOptions.expr;
+    } else {
+      const transformer = new SyncAlgebraTransformer({
+        cache: context.superTypeProvider.cache,
+        discoverer: () => 'term',
+      }, {
+        creator: context.extensionFunctionCreator,
+        type: 'async',
+      });
+      this.expr = transformer.transformAlgebra(algExpr);
+    }
 
-    this.evaluator = new AsyncRecursiveEvaluator(baseConfig);
+    this.evaluator = new AsyncRecursiveEvaluator(context, createOptions?.transformer);
+  }
+
+  public static async create(algExpr: Alg.Expression, config: IAsyncEvaluatorConfig = {}):
+  Promise<AsyncEvaluator> {
+    const context = AsyncEvaluator.setDefaultsFromConfig(config);
+
+    const transformer = new AsyncAlgebraTransformer(context.superTypeProvider, context.extensionFunctionCreator);
+    const expr = await transformer.transformAlgebra(algExpr);
+
+    return new AsyncEvaluator(algExpr, {}, { transformer, expr, context });
   }
 
   public async evaluate(mapping: Bindings): Promise<RDF.Term> {

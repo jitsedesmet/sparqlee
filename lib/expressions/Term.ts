@@ -4,8 +4,8 @@ import { DataFactory } from 'rdf-data-factory';
 import * as C from '../util/Consts';
 import { TypeAlias, TypeURL } from '../util/Consts';
 import * as Err from '../util/Errors';
-import type { IOpenWorldEnabler } from '../util/TypeHandling';
-import { isSubTypeOf } from '../util/TypeHandling';
+import type { ISyncSuperTypeProvider, IAsyncSuperTypeProvider } from '../util/TypeHandling';
+import { isSubTypeOfAsync, isSubTypeOfSync } from '../util/TypeHandling';
 import type { TermExpression, TermType } from './Expressions';
 import { ExpressionType } from './Expressions';
 
@@ -268,27 +268,16 @@ export class StringLiteral extends Literal<string> {
  *  - https://www.w3.org/TR/xquery/#dt-ebv
  *  - ... some other more precise thing i can't find...
  */
-export class NonLexicalLiteral extends Literal<undefined> {
-  public constructor(
+class BaseNonLexicalLiteral extends Literal<undefined> {
+  protected constructor(
     typedValue: undefined,
     public typeURL: string,
-    private readonly openWorldType: IOpenWorldEnabler,
     strValue?: string,
     language?: string,
   ) {
     super(typedValue, typeURL, strValue, language);
     this.typedValue = undefined;
     this.dataType = TypeAlias.SPARQL_NON_LEXICAL;
-  }
-
-  public coerceEBV(): boolean {
-    const isNumericOrBool =
-      isSubTypeOf(this.typeURL, TypeURL.XSD_BOOLEAN, this.openWorldType) ||
-      isSubTypeOf(this.typeURL, TypeAlias.SPARQL_NUMERIC, this.openWorldType);
-    if (isNumericOrBool) {
-      return false;
-    }
-    throw new Err.EBVCoercionError(this);
   }
 
   public toRDF(): RDF.Literal {
@@ -303,9 +292,66 @@ export class NonLexicalLiteral extends Literal<undefined> {
   }
 }
 
-export function isNonLexicalLiteral(lit: Literal<any>): NonLexicalLiteral | undefined {
+export class SyncNonLexicalLiteral extends BaseNonLexicalLiteral {
+  public constructor(
+    typedValue: undefined,
+    public typeURL: string,
+    private readonly openWorldType: ISyncSuperTypeProvider,
+    strValue?: string,
+    language?: string,
+  ) {
+    super(typedValue, typeURL, strValue, language);
+  }
+
+  public coerceEBV(): boolean {
+    const isNumericOrBool =
+      isSubTypeOfSync(this.typeURL, TypeURL.XSD_BOOLEAN, this.openWorldType) ||
+      isSubTypeOfSync(this.typeURL, TypeAlias.SPARQL_NUMERIC, this.openWorldType);
+    if (isNumericOrBool) {
+      return false;
+    }
+    throw new Err.EBVCoercionError(this);
+  }
+}
+
+export class AsyncNonLexicalLiteral extends BaseNonLexicalLiteral {
+  // @ts-expect-error TS2377
+  private constructor() {
+    // TODO: how can I do this properly?
+    throw new Error('TODO: should this happen?');
+  }
+
+  public boolValue: boolean | Err.EBVCoercionError;
+
+  public static async createNonLexicalLiteral(
+    typedValue: undefined,
+    typeURL: string,
+    superTypeProvider: IAsyncSuperTypeProvider,
+    strValue?: string,
+    language?: string,
+  ): Promise<AsyncNonLexicalLiteral> {
+    const baseObject: BaseNonLexicalLiteral = new BaseNonLexicalLiteral(typedValue, typeURL, strValue, language);
+    let boolValue: boolean | Err.EBVCoercionError;
+    const isNumericOrBool = await isSubTypeOfAsync(typeURL, TypeURL.XSD_BOOLEAN, superTypeProvider) ||
+      await isSubTypeOfAsync(typeURL, TypeAlias.SPARQL_NUMERIC, superTypeProvider);
+    if (isNumericOrBool) {
+      boolValue = false;
+    }
+    boolValue = new Err.EBVCoercionError(baseObject);
+    return Object.assign(baseObject, { boolValue });
+  }
+
+  public coerceEBV(): boolean {
+    if (this.boolValue instanceof Error) {
+      throw this.boolValue;
+    }
+    return this.boolValue;
+  }
+}
+
+export function isNonLexicalLiteral(lit: Literal<any>): SyncNonLexicalLiteral | undefined {
   if (lit.typedValue === undefined && lit.dataType === TypeAlias.SPARQL_NON_LEXICAL) {
-    return <NonLexicalLiteral> lit;
+    return <SyncNonLexicalLiteral> lit;
   }
   return undefined;
 }

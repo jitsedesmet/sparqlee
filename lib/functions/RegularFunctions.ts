@@ -1,18 +1,21 @@
 import { Decimal } from 'decimal.js';
 import { sha1, sha256, sha384, sha512 } from 'hash.js';
 import { DataFactory } from 'rdf-data-factory';
-import { resolve as resolveRelativeIri } from 'relative-to-absolute-iri/lib/Resolve';
+import { resolve as resolveRelativeIri } from 'relative-to-absolute-iri';
 import { hash as md5 } from 'spark-md5';
 import * as uuid from 'uuid';
 
+import type { ICompleteSharedConfig } from '../evaluators/SharedEvaluationTypes';
+
 import * as E from '../expressions';
-import { TermTransformer } from '../transformers/TermTransformer';
+import { AsyncTermTransformer } from '../transformers/AsyncTermTransformer';
+import { SyncTermTransformer } from '../transformers/SyncTermTransformer';
 import * as C from '../util/Consts';
 import { TypeAlias, TypeURL } from '../util/Consts';
 import * as Err from '../util/Errors';
 import * as P from '../util/Parsing';
-import type { IFunctionContext, IOverloadedDefinition } from './Core';
-import { bool, decimal, declare, double, integer, langString, string } from './Helpers';
+import type { IOverloadedDefinition } from './Core';
+import { bool, Builder, decimal, declare, double, integer, langString, string } from './Helpers';
 import * as X from './XPathFunctions';
 
 const DF = new DataFactory();
@@ -97,7 +100,7 @@ const equality = {
     .dateTimeTest(() => (left, right) => left.getTime() === right.getTime())
     .set(
       [ 'term', 'term' ],
-      () => ([ left, right ]) => bool(RDFTermEqual(left, right)),
+      Builder.implementAll(() => ([ left, right ]) => bool(RDFTermEqual(left, right))),
     )
     .collect(),
 };
@@ -121,7 +124,7 @@ const inequality = {
     .dateTimeTest(() => (left, right) => left.getTime() !== right.getTime())
     .set(
       [ 'term', 'term' ],
-      () => ([ left, right ]) => bool(!RDFTermEqual(left, right)),
+      Builder.implementAll(() => ([ left, right ]) => bool(!RDFTermEqual(left, right))),
     )
     .collect(),
 };
@@ -248,11 +251,11 @@ const datatype = {
 const IRI = {
   arity: 1,
   overloads: declare(C.RegularOperator.IRI)
-    .set([ 'namedNode' ], context => args => {
+    .set([ 'namedNode' ], Builder.implementAll(context => args => {
       const lit = <E.NamedNode> args[0];
       const iri = resolveRelativeIri(lit.str(), context.baseIRI || '');
       return new E.NamedNode(iri);
-    })
+    }))
     .onString1(context => lit => {
       const iri = resolveRelativeIri(lit.str(), context.baseIRI || '');
       return new E.NamedNode(iri);
@@ -260,8 +263,54 @@ const IRI = {
     .collect(),
 };
 
-// See special functions
-// const BNODE = {};
+// BNODE ---------------------------------------------------------------------
+
+/**
+ * https://www.w3.org/TR/sparql11-query/#func-bnode
+ * id has to be distinct over all id's in dataset
+ */
+const BNODE = {
+  arity: [ 0, 1 ],
+  overloads: declare(C.RegularOperator.BNODE)
+    .set([], {
+      sync: context => () => {
+        if (context.bnode) {
+          const bnode = context.bnode();
+          return new E.BlankNode(bnode);
+        }
+        return BNODE_();
+      },
+      async: context => async() => {
+        if (context.bnode) {
+          const bnode = await context.bnode();
+          return new E.BlankNode(bnode);
+        }
+
+        return BNODE_();
+      },
+    }).set([ C.TypeURL.XSD_STRING ], {
+      sync: context => ([ arg, ..._ ]) => {
+        const strInput = arg.str();
+        if (context.bnode) {
+          const bnode = context.bnode(strInput);
+          return new E.BlankNode(bnode);
+        }
+        return BNODE_(strInput);
+      },
+      async: context => async([ arg, ..._ ]) => {
+        const strInput = arg.str();
+        if (context.bnode) {
+          const bnode = await context.bnode(strInput);
+          return new E.BlankNode(bnode);
+        }
+        return BNODE_(strInput);
+      },
+    }).collect(),
+};
+
+function BNODE_(input?: string): E.BlankNode {
+  return new E.BlankNode(input || uuid.v4());
+}
 
 /**
  * https://www.w3.org/TR/sparql11-query/#func-strdt
@@ -269,10 +318,15 @@ const IRI = {
 const STRDT = {
   arity: 2,
   overloads: declare(C.RegularOperator.STRDT).set(
-    [ TypeURL.XSD_STRING, 'namedNode' ],
-    ({ openWorldEnabler }) => ([ str, iri ]: [E.StringLiteral, E.NamedNode]) => {
-      const lit = DF.literal(str.typedValue, DF.namedNode(iri.value));
-      return new TermTransformer(openWorldEnabler).transformLiteral(lit);
+    [ TypeURL.XSD_STRING, 'namedNode' ], {
+      sync: ({ superTypeProvider }) => ([ str, iri ]: [E.StringLiteral, E.NamedNode]) => {
+        const lit = DF.literal(str.typedValue, DF.namedNode(iri.value));
+        return new SyncTermTransformer(superTypeProvider).transformLiteral(lit);
+      },
+      async: ({ superTypeProvider }) => ([ str, iri ]: [E.StringLiteral, E.NamedNode]) => {
+        const lit = DF.literal(str.typedValue, DF.namedNode(iri.value));
+        return new AsyncTermTransformer(superTypeProvider).transformLiteral(lit);
+      },
     },
   ).collect(),
 };
@@ -295,7 +349,7 @@ const STRLANG = {
 const UUID = {
   arity: 0,
   overloads: declare(C.RegularOperator.UUID)
-    .set([], () => () => new E.NamedNode(`urn:uuid:${uuid.v4()}`))
+    .set([], Builder.implementAll(() => () => new E.NamedNode(`urn:uuid:${uuid.v4()}`)))
     .collect(),
 };
 
@@ -305,7 +359,7 @@ const UUID = {
 const STRUUID = {
   arity: 0,
   overloads: declare(C.RegularOperator.STRUUID)
-    .set([], () => () => string(uuid.v4()))
+    .set([], Builder.implementAll(() => () => string(uuid.v4())))
     .collect(),
 };
 
@@ -530,9 +584,9 @@ const langmatches = {
     ).collect(),
 };
 
-const regex2: (context: IFunctionContext) => (text: string, pattern: string) => E.BooleanLiteral =
+const regex2: (context: ICompleteSharedConfig) => (text: string, pattern: string) => E.BooleanLiteral =
   () => (text: string, pattern: string) => bool(X.matches(text, pattern));
-const regex3: (context: IFunctionContext) => (text: string, pattern: string, flags: string) => E.BooleanLiteral =
+const regex3: (context: ICompleteSharedConfig) => (text: string, pattern: string, flags: string) => E.BooleanLiteral =
   () => (text: string, pattern: string, flags: string) => bool(X.matches(text, pattern, flags));
 /**
  * https://www.w3.org/TR/sparql11-query/#func-regex
@@ -558,10 +612,11 @@ const REPLACE = {
     )
     .set(
       [ TypeURL.RDF_LANG_STRING, TypeURL.XSD_STRING, TypeURL.XSD_STRING ],
-      () => ([ arg, pattern, replacement ]: [E.LangStringLiteral, E.StringLiteral, E.StringLiteral]) => {
-        const result = X.replace(arg.typedValue, pattern.typedValue, replacement.typedValue);
-        return langString(result, arg.language);
-      },
+      Builder.implementAll(() =>
+        ([ arg, pattern, replacement ]: [E.LangStringLiteral, E.StringLiteral, E.StringLiteral]) => {
+          const result = X.replace(arg.typedValue, pattern.typedValue, replacement.typedValue);
+          return langString(result, arg.language);
+        }),
     )
     .onQuaternaryTyped(
       [ TypeURL.XSD_STRING, TypeURL.XSD_STRING, TypeURL.XSD_STRING, TypeURL.XSD_STRING ],
@@ -570,11 +625,11 @@ const REPLACE = {
     )
     .set(
       [ TypeURL.RDF_LANG_STRING, TypeURL.XSD_STRING, TypeURL.XSD_STRING, TypeURL.XSD_STRING ],
-      () => ([ arg, pattern, replacement, flags ]:
+      Builder.implementAll(() => ([ arg, pattern, replacement, flags ]:
       [E.LangStringLiteral, E.StringLiteral, E.StringLiteral, E.StringLiteral]) => {
         const result = X.replace(arg.typedValue, pattern.typedValue, replacement.typedValue, flags.typedValue);
         return langString(result, arg.language);
-      },
+      }),
     )
     .collect(),
 };
@@ -630,7 +685,7 @@ const floor = {
 const rand = {
   arity: 0,
   overloads: declare(C.RegularOperator.RAND)
-    .set([], () => () => double(Math.random()))
+    .set([], Builder.implementAll(() => () => double(Math.random())))
     .collect(),
 };
 
@@ -648,8 +703,8 @@ function parseDate(dateLit: E.DateTimeLiteral): P.ISplittedDate {
  */
 const now = {
   arity: 0,
-  overloads: declare(C.RegularOperator.NOW).set([], (functionConfig: IFunctionContext) => () =>
-    new E.DateTimeLiteral(functionConfig.now, functionConfig.now.toISOString())).collect(),
+  overloads: declare(C.RegularOperator.NOW).set([], Builder.implementAll((functionConfig: ICompleteSharedConfig) =>
+    () => new E.DateTimeLiteral(functionConfig.now, functionConfig.now.toISOString()))).collect(),
 };
 
 /**
@@ -845,7 +900,7 @@ export const definitions: Record<C.RegularOperator, IOverloadedDefinition> = {
   datatype,
   iri: IRI,
   uri: IRI,
-  // 'BNODE': BNODE (see special operators),
+  BNODE,
   strdt: STRDT,
   strlang: STRLANG,
   uuid: UUID,

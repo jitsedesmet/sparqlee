@@ -2,33 +2,33 @@ import type * as RDF from '@rdfjs/types';
 import type { Algebra as Alg } from 'sparqlalgebrajs';
 import * as E from '../../expressions';
 import type { AsyncExtension } from '../../expressions';
-import type { EvalContextAsync } from '../../functions';
-import type { ITermTransformer } from '../../transformers/TermTransformer';
-import { TermTransformer } from '../../transformers/TermTransformer';
+import type { IAsyncTermTransformer } from '../../transformers/AsyncTermTransformer';
+import { AsyncTermTransformer } from '../../transformers/AsyncTermTransformer';
 import type { Bindings, IExpressionEvaluator } from '../../Types';
 import * as Err from '../../util/Errors';
-import type { IOpenWorldEnabler } from '../../util/TypeHandling';
+import type { IAsyncSuperTypeProvider } from '../../util/TypeHandling';
 import type { AsyncExtensionFunctionCreator } from '../AsyncEvaluator';
+import type { IAsyncEvaluationContext, ICompleteSharedConfig } from '../SharedEvaluationTypes';
 import { BaseExpressionEvaluator } from './BaseExpressionEvaluator';
-import type { ICompleteSharedConfig } from './BaseExpressionEvaluator';
 
 export interface ICompleteAsyncEvaluatorConfig extends ICompleteSharedConfig {
   exists?: (expression: Alg.ExistenceExpression, mapping: Bindings) => Promise<boolean>;
   aggregate?: (expression: Alg.AggregateExpression) => Promise<RDF.Term>;
   bnode?: (input?: string) => Promise<RDF.BlankNode>;
   extensionFunctionCreator?: AsyncExtensionFunctionCreator;
+  superTypeProvider: IAsyncSuperTypeProvider;
 }
 
 export class AsyncRecursiveEvaluator extends BaseExpressionEvaluator
   implements IExpressionEvaluator<E.Expression, Promise<E.Term>> {
-  protected openWorldType: IOpenWorldEnabler;
+  protected readonly termTransformer: IAsyncTermTransformer;
   private readonly subEvaluators: Record<string, (expr: E.Expression, mapping: Bindings) =>
   Promise<E.Term> | E.Term> = {
     // Shared
     [E.ExpressionType.Term]: this.term.bind(this),
-    [E.ExpressionType.Variable]: this.variable.bind(this),
 
     // Async
+    [E.ExpressionType.Variable]: this.variable.bind(this),
     [E.ExpressionType.Operator]: this.evalOperator.bind(this),
     [E.ExpressionType.SpecialOperator]: this.evalSpecialOperator.bind(this),
     [E.ExpressionType.Named]: this.evalNamed.bind(this),
@@ -37,15 +37,17 @@ export class AsyncRecursiveEvaluator extends BaseExpressionEvaluator
     [E.ExpressionType.AsyncExtension]: this.evalAsyncExtension.bind(this),
   };
 
-  public constructor(private readonly context: ICompleteAsyncEvaluatorConfig, termTransformer?: ITermTransformer) {
-    super(termTransformer || new TermTransformer({
-      discoverer: context.superTypeDiscoverCallback,
-      cache: context.typeCache,
-    }));
-    this.openWorldType = {
-      discoverer: context.superTypeDiscoverCallback,
-      cache: context.typeCache,
-    };
+  public constructor(private readonly context: ICompleteAsyncEvaluatorConfig, termTransformer?: IAsyncTermTransformer) {
+    super();
+    this.termTransformer = termTransformer || new AsyncTermTransformer(context.superTypeProvider);
+  }
+
+  protected variable(expr: E.Variable, mapping: Bindings): Promise<E.Term> {
+    const term = mapping.get(expr.name);
+    if (!term) {
+      throw new Err.UnboundVariableError(expr.name, mapping);
+    }
+    return this.termTransformer.transformRDFTermUnsafe(term);
   }
 
   public async evaluate(expr: E.Expression, mapping: Bindings): Promise<E.Term> {
@@ -59,22 +61,16 @@ export class AsyncRecursiveEvaluator extends BaseExpressionEvaluator
   private async evalOperator(expr: E.Operator, mapping: Bindings): Promise<E.Term> {
     const argPromises = expr.args.map(arg => this.evaluate(arg, mapping));
     const argResults = await Promise.all(argPromises);
-    return expr.apply(argResults);
+    return await expr.applyAsync(this.context)(argResults);
   }
 
   private async evalSpecialOperator(expr: E.SpecialOperator, mapping: Bindings): Promise<E.Term> {
     const evaluate = this.evaluate.bind(this);
-    const context: EvalContextAsync = {
+    const context: IAsyncEvaluationContext = {
       args: expr.args,
       mapping,
       evaluate,
-      functionContext: {
-        now: this.context.now,
-        baseIRI: this.context.baseIRI,
-        openWorldEnabler: this.openWorldType,
-      },
-      bnode: this.context.bnode,
-      overloadCache: this.context.overloadCache,
+      ...this.context,
     };
     return expr.applyAsync(context);
   }
@@ -85,7 +81,7 @@ export class AsyncRecursiveEvaluator extends BaseExpressionEvaluator
   }
 
   private async evalNamed(expr: E.Named, mapping: Bindings): Promise<E.Term> {
-    return expr.apply(await this._evalAsyncArgs(expr.args, mapping));
+    return await expr.applyAsync(this.context)(await this._evalAsyncArgs(expr.args, mapping));
   }
 
   private async evalAsyncExtension(expr: AsyncExtension, mapping: Bindings): Promise<E.Term> {

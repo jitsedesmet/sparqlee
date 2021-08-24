@@ -1,21 +1,21 @@
 import type * as RDF from '@rdfjs/types';
 import type { Algebra } from 'sparqlalgebrajs';
+import type { ICompleteSyncEvaluatorConfig } from '../evaluators/evaluatorHelpers/SyncRecursiveEvaluator';
 import type * as E from '../expressions';
-import type { IApplyFunctionContext } from '../functions';
-import { TermTransformer } from '../transformers/TermTransformer';
-import type { ITermTransformer } from '../transformers/TermTransformer';
+import { SyncTermTransformer } from '../transformers/SyncTermTransformer';
+import type { ISyncTermTransformer } from '../transformers/SyncTermTransformer';
 import { TypeAlias } from '../util/Consts';
-import { isSubTypeOf } from '../util/TypeHandling';
+import { isSubTypeOfSync } from '../util/TypeHandling';
 
-export abstract class BaseAggregator<State> {
+export abstract class BaseSyncAggregator<State> {
   protected distinct: boolean;
   protected separator: string;
-  protected termTransformer: ITermTransformer;
+  protected termTransformer: ISyncTermTransformer;
 
-  public constructor(expr: Algebra.AggregateExpression, protected applyConfig: IApplyFunctionContext) {
+  public constructor(expr: Algebra.AggregateExpression, protected config: ICompleteSyncEvaluatorConfig) {
     this.distinct = expr.distinct;
     this.separator = expr.separator || ' ';
-    this.termTransformer = new TermTransformer(applyConfig.functionContext.openWorldEnabler);
+    this.termTransformer = new SyncTermTransformer(config.superTypeProvider);
   }
 
   protected termToNumericOrError(term: RDF.Term): E.NumericLiteral {
@@ -23,7 +23,7 @@ export abstract class BaseAggregator<State> {
     if (term.termType !== 'Literal') {
       throw new Error(`Term with value ${term.value} has type ${term.termType} and is not a numeric literal`);
     } else if (
-      !isSubTypeOf(term.datatype.value, TypeAlias.SPARQL_NUMERIC, this.applyConfig.functionContext.openWorldEnabler)
+      !isSubTypeOfSync(term.datatype.value, TypeAlias.SPARQL_NUMERIC, this.config.superTypeProvider)
     ) {
       throw new Error(`Term datatype ${term.datatype.value} with value ${term.value} has type ${term.termType} and is not a numeric literal`);
     }

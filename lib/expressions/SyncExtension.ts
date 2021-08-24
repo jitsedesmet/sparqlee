@@ -1,5 +1,5 @@
 import type * as RDF from '@rdfjs/types';
-import type { Expression, SimpleApplication, SyncExtensionExpression } from './Expressions';
+import type { Expression, SimpleSyncApplication, SyncExtensionExpression } from './Expressions';
 import { ExpressionType } from './Expressions';
 
 export class SyncExtension implements SyncExtensionExpression {
@@ -8,6 +8,6 @@ export class SyncExtension implements SyncExtensionExpression {
   public constructor(
     public name: RDF.NamedNode,
     public args: Expression[],
-    public apply: SimpleApplication,
+    public apply: SimpleSyncApplication,
   ) { }
 }
