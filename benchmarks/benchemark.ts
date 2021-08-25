@@ -1,9 +1,13 @@
+// eslint-disable-next-line eslint-comments/disable-enable-pair
+/* eslint-disable no-console */
+
 import type * as RDF from '@rdfjs/types';
 import type { Event } from 'benchmark';
 import { Suite } from 'benchmark';
+import * as Benchmark from 'benchmark';
 import { DataFactory } from 'rdf-data-factory';
 import { translate } from 'sparqlalgebrajs';
-import { AsyncEvaluator } from '../lib/evaluators/AsyncEvaluator';
+import { SyncEvaluator } from '../lib/evaluators/SyncEvaluator';
 import { Bindings } from '../lib/Types';
 import { TypeURL } from '../lib/util/Consts';
 import { template } from '../test/util/Aliases';
@@ -15,21 +19,25 @@ function integerTerm(int: number): RDF.Term {
   return DF.literal(int.toString(), DF.namedNode(TypeURL.XSD_INTEGER));
 }
 
-benchSuite.add('bench addition', async() => {
+const noCache = new Benchmark('bench addition no overloadCache', () => {
   const query = translate(template('?a + ?b = ?c'));
-  const evaluator = new AsyncEvaluator(query.input.expression);
+  const evaluator = new SyncEvaluator(query.input.expression);
   const max = 100;
   for (let fst = 0; fst < max; fst++) {
     for (let snd = 0; snd < max; snd++) {
-      await evaluator.evaluate(Bindings({
+      evaluator.evaluate(Bindings({
         '?a': integerTerm(fst),
         '?b': integerTerm(snd),
         '?c': integerTerm(fst + snd),
       }));
     }
   }
-}).on('cycle', (event: Event) => {
-  // eslint-disable-next-line no-console
-  console.log(String(event.target));
-}).run();
+});
 
+benchSuite.push(noCache);
+benchSuite.on('cycle', (event: Event) => {
+  console.log(String(event.target));
+}).on('complete', () => {
+  console.log(`Mean execution time without cache ${noCache.stats.mean}`);
+  console.log(`Fastest is ${benchSuite.filter('fastest').map('name')}`);
+}).run({ async: true });
