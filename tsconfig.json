@@ -20,8 +20,9 @@
     "index.ts",
     "lib/**/*.ts",
     "bin/**/*.ts",
-    "util/**/*.ts", 
+    "util/**/*.ts",
     "typings/**/*.d.ts",
+    "benchmarks/**/*.ts",
   ],
   "exclude": [
     "**/dist",
