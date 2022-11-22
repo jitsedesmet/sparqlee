@@ -82,6 +82,9 @@ export class TermTransformer implements ITermTransformer {
       case TypeURL.RDF_LANG_STRING: return new E.LangStringLiteral(lit.value, lit.language);
 
       case TypeURL.XSD_DATE_TIME_STAMP:
+      case TypeURL.XSD_DATE:
+      case TypeURL.XSD_G_YEAR:
+      case TypeURL.XSD_G_YEAR_MONTH:
       case TypeURL.XSD_DATE_TIME: {
         const dateVal: Date = new Date(lit.value);
         if (Number.isNaN(dateVal.getTime())) {

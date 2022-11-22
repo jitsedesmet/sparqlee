@@ -24,6 +24,13 @@ export enum TypeURL {
   XSD_DATE_TIME_STAMP = 'http://www.w3.org/2001/XMLSchema#dateTimeStamp',
   XSD_DATE = 'http://www.w3.org/2001/XMLSchema#date',
 
+  XSD_G_MONTH = 'http://www.w3.org/2001/XMLSchema#gMonth',
+  XSD_G_MONTHDAY = 'http://www.w3.org/2001/XMLSchema#gMonthDay',
+  XSD_G_YEAR = 'http://www.w3.org/2001/XMLSchema#gYear',
+  XSD_G_YEAR_MONTH = 'http://www.w3.org/2001/XMLSchema#gYearMonth',
+  XSD_TIME = 'http://www.w3.org/2001/XMLSchema#time',
+  XSD_G_DAY = 'http://www.w3.org/2001/XMLSchema#gDay',
+
   // Numeric types
   XSD_DECIMAL = 'http://www.w3.org/2001/XMLSchema#decimal',
   XSD_FLOAT = 'http://www.w3.org/2001/XMLSchema#float',

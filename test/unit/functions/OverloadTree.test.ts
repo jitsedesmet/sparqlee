@@ -15,8 +15,8 @@ describe('OverloadTree', () => {
     sharedContext = { ...getDefaultSharedContext(), enableExtendedXsdTypes: true };
   });
 
-  function typePromotionTest<T>(tree: OverloadTree, promoteFrom: KnownLiteralTypes, promoteTo: KnownLiteralTypes,
-    value: T, valueToEqual?: T) {
+  function typePromotionTest<T, U>(tree: OverloadTree, promoteFrom: KnownLiteralTypes, promoteTo: KnownLiteralTypes,
+    value: T, valueToEqual?: U) {
     tree.addOverload([ promoteTo ], () => ([ arg ]) => arg);
     const arg = new Literal<T>(value, promoteFrom);
     const res = isLiteralTermExpression(tree
@@ -53,6 +53,31 @@ describe('OverloadTree', () => {
     it('promotes DECIMAL to DOUBLE', () => {
       typePromotionTest(emptyTree, TypeURL.XSD_DECIMAL, TypeURL.XSD_DOUBLE, '0');
     });
+  });
+
+  describe('handles own type promotion', () => {
+    // Nice help: http://www.datypic.com/sc/xsd/ns-xsd.html
+    it('promotes XSD_DATE to XSD_DATE_TIME', () => {
+      typePromotionTest(emptyTree, TypeURL.XSD_DATE, TypeURL.XSD_DATE_TIME, '1963-03-22', new Date('1963-03-22'));
+    });
+    // It('promotes XSD_G_MONTH to XSD_DATE_TIME', () => {
+    //   typePromotionTest(emptyTree, TypeURL.XSD_G_MONTH, TypeURL.XSD_DATE_TIME, '"--04"^^xsd:gMonth');
+    // });
+    // it('promotes XSD_G_MONTHDAY to XSD_DATE_TIME', () => {
+    //   typePromotionTest(emptyTree, TypeURL.XSD_G_MONTHDAY, TypeURL.XSD_DATE_TIME, '--04-12^^xsd:gMonthDay');
+    // });
+    it('promotes XSD_G_YEAR to XSD_DATE_TIME', () => {
+      typePromotionTest(emptyTree, TypeURL.XSD_G_YEAR, TypeURL.XSD_DATE_TIME, '2004', new Date('2004'));
+    });
+    it('promotes XSD_G_YEAR_MONTH to XSD_DATE_TIME', () => {
+      typePromotionTest(emptyTree, TypeURL.XSD_G_YEAR_MONTH, TypeURL.XSD_DATE_TIME, '2004-04', new Date('2004-04'));
+    });
+    // It('promotes XSD_TIME to XSD_DATE_TIME', () => {
+    //   typePromotionTest(emptyTree, TypeURL.XSD_TIME, TypeURL.XSD_DATE_TIME, '"13:20:00"^^xsd:time');
+    // });
+    // it('promotes XSD_G_DAY to XSD_DATE_TIME', () => {
+    //   typePromotionTest(emptyTree, TypeURL.XSD_G_DAY, TypeURL.XSD_DATE_TIME, '"---02"^^xsd:gDay');
+    // });
   });
 
   describe('handles subtype substitution', () => {
