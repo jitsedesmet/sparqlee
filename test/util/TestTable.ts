@@ -28,6 +28,7 @@ type Row = string[];
  * false false = false
  * `
 */
+// TODO: update so both type systems are used?
 abstract class Table<RowType extends Row> {
   protected abstract readonly parser: TableParser<RowType>;
   protected abstract readonly def: TestTableConfig;
